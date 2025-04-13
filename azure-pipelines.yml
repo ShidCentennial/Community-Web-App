@@ -22,8 +22,12 @@ stages:
       displayName: 'Build Client App'
     
     - script: |
-        mkdir -p $(Build.ArtifactStagingDirectory)/client
-        cp -r client/dist/* $(Build.ArtifactStagingDirectory)/client/ || echo "Warning: dist directory may not exist"
+        IF NOT EXIST "$(Build.ArtifactStagingDirectory)\client" mkdir "$(Build.ArtifactStagingDirectory)\client"
+        IF EXIST "client\dist" (
+          xcopy /Y /I /E "client\dist\*" "$(Build.ArtifactStagingDirectory)\client\"
+        ) ELSE (
+          echo "Warning: dist directory does not exist"
+        )
       displayName: 'Copy client build artifacts'
       
     - task: PublishBuildArtifacts@1
@@ -37,8 +41,8 @@ stages:
       displayName: 'Install Server Dependencies'
     
     - script: |
-        mkdir -p $(Build.ArtifactStagingDirectory)/server
-        cp -r server/* $(Build.ArtifactStagingDirectory)/server/
+        IF NOT EXIST "$(Build.ArtifactStagingDirectory)\server" mkdir "$(Build.ArtifactStagingDirectory)\server"
+        xcopy /Y /I /E "server\*" "$(Build.ArtifactStagingDirectory)\server\"
       displayName: 'Copy server files'
       
     - task: PublishBuildArtifacts@1
