@@ -21,9 +21,14 @@ stages:
         npm run build
       displayName: 'Build Client App'
     
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/client
+        cp -r client/dist/* $(Build.ArtifactStagingDirectory)/client/ || echo "Warning: dist directory may not exist"
+      displayName: 'Copy client build artifacts'
+      
     - task: PublishBuildArtifacts@1
       inputs:
-        pathtoPublish: 'client/dist'
+        pathtoPublish: '$(Build.ArtifactStagingDirectory)/client'
         artifactName: 'client-build'
     
     - script: |
@@ -31,7 +36,12 @@ stages:
         npm ci
       displayName: 'Install Server Dependencies'
     
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/server
+        cp -r server/* $(Build.ArtifactStagingDirectory)/server/
+      displayName: 'Copy server files'
+      
     - task: PublishBuildArtifacts@1
       inputs:
-        pathtoPublish: 'server'
+        pathtoPublish: '$(Build.ArtifactStagingDirectory)/server'
         artifactName: 'server'
