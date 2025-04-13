@@ -1,0 +1,44 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+- stage: Build
+  jobs:
+  - job: BuildClient
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd client
+        npm ci
+        npm run lint
+        npm run build
+      displayName: 'Build Client App'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: 'client/dist'
+        artifactName: 'client-build'
+  
+  - job: BuildServer
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd server
+        npm ci
+      displayName: 'Install Server Dependencies'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: 'server'
+        artifactName: 'server'
