@@ -12,12 +12,6 @@ function CreatePost() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   
-  const [user, setUser] = useState(null);
-  const [businessName, setBusinessName] = useState('');
-  const [businessDescription, setBusinessDescription] = useState('');
-  const [businessDeals, setBusinessDeals] = useState('');
-  const [businessImage, setBusinessImage] = useState('');
-  
   useEffect(() => {
     // Check if user is logged in
     const token = localStorage.getItem('token');
@@ -29,17 +23,9 @@ function CreatePost() {
     }
     
     const user = JSON.parse(userData);
-    setUser(user);
-    
-    // Redirect if user role is not valid for posting
-    if (user.role !== 'Resident' && user.role !== 'BusinessOwner') {
+    if (user.role !== 'Resident') {
       navigate('/dashboard');
       return;
-    }
-    
-    // Set default category based on role
-    if (user.role === 'BusinessOwner') {
-      setCategory('Business');
     }
   }, [navigate]);
   
@@ -70,14 +56,6 @@ function CreatePost() {
       // Add category-specific data
       if (category === 'Emergency Alert') {
         postInput.severity = severity;
-      }
-      
-      // Add business-specific data for business owners
-      if (category === 'Business') {
-        postInput.businessName = businessName;
-        postInput.businessDescription = businessDescription;
-        postInput.businessDeals = businessDeals.split(',').map(deal => deal.trim()).filter(deal => deal);
-        postInput.businessImage = businessImage;
       }
       
       await createPost({
@@ -113,17 +91,10 @@ function CreatePost() {
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             required
-            disabled={user?.role === 'BusinessOwner'}
           >
-            {user?.role === 'Resident' ? (
-              <>
-                <option value="News/Discussion">News & Discussion</option>
-                <option value="Help Request">Help Request</option>
-                <option value="Emergency Alert">Emergency Alert</option>
-              </>
-            ) : (
-              <option value="Business">Business Post</option>
-            )}
+            <option value="News/Discussion">News & Discussion</option>
+            <option value="Help Request">Help Request</option>
+            <option value="Emergency Alert">Emergency Alert</option>
           </select>
         </div>
         
@@ -141,52 +112,6 @@ function CreatePost() {
               <option value="High">High</option>
             </select>
           </div>
-        )}
-        
-        {/* Show business fields only for Business Owners */}
-        {category === 'Business' && (
-          <>
-            <div className="mb-3">
-              <label className="form-label">Business Name</label>
-              <input
-                type="text"
-                className="form-control"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Business Description</label>
-              <textarea
-                className="form-control"
-                value={businessDescription}
-                onChange={(e) => setBusinessDescription(e.target.value)}
-                rows="3"
-                required
-              ></textarea>
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Special Deals (comma-separated)</label>
-              <input
-                type="text"
-                className="form-control"
-                value={businessDeals}
-                onChange={(e) => setBusinessDeals(e.target.value)}
-                placeholder="e.g., 10% off for community members, Free coffee on Mondays"
-              />
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Image URL (optional)</label>
-              <input
-                type="text"
-                className="form-control"
-                value={businessImage}
-                onChange={(e) => setBusinessImage(e.target.value)}
-                placeholder="Enter an image URL for your business"
-              />
-            </div>
-          </>
         )}
         
         <div className="mb-3">

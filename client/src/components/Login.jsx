@@ -1,20 +1,21 @@
-// Login.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@apollo/client';
 import { LOGIN_USER } from '../graphql/mutations';
 
-function Login({ setIsAuthenticated }) {
+function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
-
+  
   const [login, { loading }] = useMutation(LOGIN_USER, {
     onCompleted: (data) => {
+      // Store the token in localStorage
       localStorage.setItem('token', data.login.token);
       localStorage.setItem('user', JSON.stringify(data.login.user));
-      setIsAuthenticated(true); // ✅ Update authentication state
+      
+      // Redirect to dashboard
       navigate('/dashboard');
     },
     onError: (error) => {
@@ -26,14 +27,15 @@ function Login({ setIsAuthenticated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    
     try {
-      await login({
-        variables: {
-          input: { email, password }
-        }
+      await login({ 
+        variables: { 
+          input: { email, password } 
+        } 
       });
     } catch (err) {
-      // Error already handled
+      // Error is handled in onError callback
     }
   };
 
@@ -62,9 +64,9 @@ function Login({ setIsAuthenticated }) {
             required
           />
         </div>
-        <button
-          type="submit"
-          className="btn btn-primary"
+        <button 
+          type="submit" 
+          className="btn btn-primary" 
           disabled={loading}
         >
           {loading ? 'Logging in...' : 'Login'}
