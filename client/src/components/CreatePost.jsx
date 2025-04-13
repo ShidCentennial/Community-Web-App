@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useMutation } from '@apollo/client';
+import { CREATE_POST } from '../graphql/mutations';
+import { GET_POSTS } from '../graphql/queries';
 
 function CreatePost() {
   const [title, setTitle] = useState('');
@@ -8,8 +10,13 @@ function CreatePost() {
   const [category, setCategory] = useState('News/Discussion');
   const [severity, setSeverity] = useState('Medium');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  
+  const [user, setUser] = useState(null);
+  const [businessName, setBusinessName] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [businessDeals, setBusinessDeals] = useState('');
+  const [businessImage, setBusinessImage] = useState('');
   
   useEffect(() => {
     // Check if user is logged in
@@ -22,21 +29,39 @@ function CreatePost() {
     }
     
     const user = JSON.parse(userData);
-    if (user.role !== 'Resident') {
+    setUser(user);
+    
+    // Redirect if user role is not valid for posting
+    if (user.role !== 'Resident' && user.role !== 'BusinessOwner') {
       navigate('/dashboard');
       return;
     }
+    
+    // Set default category based on role
+    if (user.role === 'BusinessOwner') {
+      setCategory('Business');
+    }
   }, [navigate]);
+  
+  const [createPost, { loading }] = useMutation(CREATE_POST, {
+    onCompleted: () => {
+      // Redirect to posts page after successful creation
+      navigate('/posts');
+    },
+    onError: (error) => {
+      setError(error.message || 'Failed to create post');
+      console.error('Error creating post:', error);
+    },
+    refetchQueries: [{ query: GET_POSTS }], // Refresh posts list
+    awaitRefetchQueries: true
+  });
   
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
     
     try {
-      const token = localStorage.getItem('token');
-      
-      const postData = {
+      const postInput = {
         title,
         content,
         category
@@ -44,21 +69,22 @@ function CreatePost() {
       
       // Add category-specific data
       if (category === 'Emergency Alert') {
-        postData.severity = severity;
+        postInput.severity = severity;
       }
       
-      await axios.post('http://localhost:5000/api/posts', postData, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      // Add business-specific data for business owners
+      if (category === 'Business') {
+        postInput.businessName = businessName;
+        postInput.businessDescription = businessDescription;
+        postInput.businessDeals = businessDeals.split(',').map(deal => deal.trim()).filter(deal => deal);
+        postInput.businessImage = businessImage;
+      }
       
-      // Redirect to posts page after successful creation
-      navigate('/posts');
+      await createPost({
+        variables: { input: postInput }
+      });
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to create post');
-      setLoading(false);
-      console.error('Error creating post:', err);
+      // Error is handled in onError callback
     }
   };
   
@@ -87,10 +113,17 @@ function CreatePost() {
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             required
+            disabled={user?.role === 'BusinessOwner'}
           >
-            <option value="News/Discussion">News & Discussion</option>
-            <option value="Help Request">Help Request</option>
-            <option value="Emergency Alert">Emergency Alert</option>
+            {user?.role === 'Resident' ? (
+              <>
+                <option value="News/Discussion">News & Discussion</option>
+                <option value="Help Request">Help Request</option>
+                <option value="Emergency Alert">Emergency Alert</option>
+              </>
+            ) : (
+              <option value="Business">Business Post</option>
+            )}
           </select>
         </div>
         
@@ -108,6 +141,52 @@ function CreatePost() {
               <option value="High">High</option>
             </select>
           </div>
+        )}
+        
+        {/* Show business fields only for Business Owners */}
+        {category === 'Business' && (
+          <>
+            <div className="mb-3">
+              <label className="form-label">Business Name</label>
+              <input
+                type="text"
+                className="form-control"
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="mb-3">
+              <label className="form-label">Business Description</label>
+              <textarea
+                className="form-control"
+                value={businessDescription}
+                onChange={(e) => setBusinessDescription(e.target.value)}
+                rows="3"
+                required
+              ></textarea>
+            </div>
+            <div className="mb-3">
+              <label className="form-label">Special Deals (comma-separated)</label>
+              <input
+                type="text"
+                className="form-control"
+                value={businessDeals}
+                onChange={(e) => setBusinessDeals(e.target.value)}
+                placeholder="e.g., 10% off for community members, Free coffee on Mondays"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="form-label">Image URL (optional)</label>
+              <input
+                type="text"
+                className="form-control"
+                value={businessImage}
+                onChange={(e) => setBusinessImage(e.target.value)}
+                placeholder="Enter an image URL for your business"
+              />
+            </div>
+          </>
         )}
         
         <div className="mb-3">
