@@ -41,9 +41,6 @@ async function startServer() {
   // Apply Apollo middleware to Express
   apolloServer.applyMiddleware({ app, path: '/graphql' });
 
-  const eventRoutes = require('./routes/events');
-  app.use('/api/events', eventRoutes);
-
   // Start Express server
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
