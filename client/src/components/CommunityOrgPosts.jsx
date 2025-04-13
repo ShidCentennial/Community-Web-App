@@ -91,8 +91,24 @@ function CommunityDashboard() {
                       : "Invalid date"}
                   </p>
 
+                  <div className="mt-3">
+                    <button
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={() => handlePredictTiming(event.id, event.topic)}
+                    >
+                      Predict Best Timing
+                    </button>
+                    {timingSuggestions[event.id] && (
+                      <div className="mt-2">
+                        <span className="badge bg-success">
+                          Suggested: {timingSuggestions[event.id]}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="mt-4">
-                    <strong></strong>
+                    <strong>Recommended Volunteers:</strong>
                     <ul className="list-group">
                       {matchVolunteers(event.topic).map((vol) => (
                         <li className="list-group-item" key={vol.id}>

@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Post = require('../models/Post');
+const Event = require('../models/Event');
 const { AuthenticationError, UserInputError, ForbiddenError } = require('apollo-server-express');
 
 // Generate JWT token
@@ -43,10 +44,12 @@ const getAuthenticatedUser = async (context) => {
   }
 };
 
-// Check if user is a resident
-const checkIsResident = (user) => {
-  if (user.role !== 'Resident') {
-    throw new ForbiddenError('Access denied. Only Residents can perform this action.');
+// Check for valid post creation role
+const checkValidPostCreator = (user, category) => {
+  if (category === 'Business' && user.role !== 'BusinessOwner') {
+    throw new ForbiddenError('Access denied. Only Business Owners can create business posts.');
+  } else if (category !== 'Business' && user.role !== 'Resident') {
+    throw new ForbiddenError('Access denied. Only Residents can create community posts.');
   }
 };
 
@@ -65,10 +68,15 @@ const resolvers = {
       };
     },
     
-    // Get all posts
+    // Get all posts (for residents only)
     getPosts: async () => {
       try {
-        const posts = await Post.find().sort({ createdAt: -1 });
+        const posts = await Post.find({ 
+          $or: [
+            { 'category': { $ne: 'Business' } }
+          ]
+        }).sort({ createdAt: -1 });
+        
         return posts.map(post => ({
           id: post._id,
           ...post._doc,
@@ -77,6 +85,45 @@ const resolvers = {
         }));
       } catch (err) {
         throw new Error('Error fetching posts');
+      }
+    },
+    
+    // Get all posts regardless of role
+    getAllPosts: async (_, __, context) => {
+      try {
+        const user = await getAuthenticatedUser(context);
+        const posts = await Post.find().sort({ createdAt: -1 });
+        
+        return posts.map(post => ({
+          id: post._id,
+          ...post._doc,
+          createdAt: post.createdAt.toISOString(),
+          updatedAt: post.updatedAt.toISOString()
+        }));
+      } catch (err) {
+        throw new Error('Error fetching all posts');
+      }
+    },
+    
+    // Get business posts
+    getBusinessPosts: async (_, __, context) => {
+      try {
+        const user = await getAuthenticatedUser(context);
+        
+        // Get business posts from the database
+        const posts = await Post.find({ 
+          category: 'Business',
+          author: user._id 
+        }).sort({ createdAt: -1 });
+        
+        return posts.map(post => ({
+          id: post._id,
+          ...post._doc,
+          createdAt: post.createdAt.toISOString(),
+          updatedAt: post.updatedAt.toISOString()
+        }));
+      } catch (err) {
+        throw new Error('Error fetching business posts');
       }
     },
     
@@ -110,6 +157,58 @@ const resolvers = {
         };
       } catch (err) {
         throw new Error('Error fetching post');
+      }
+    },
+
+    // Get all events
+    getEvents: async () => {
+      try {
+        const events = await Event.find().sort({ createdAt: -1 });
+        return events.map(event => ({
+          id: event._id,
+          ...event._doc,
+          createdAt: event.createdAt.toISOString()
+        }));
+      } catch (err) {
+        throw new Error('Error fetching events');
+      }
+    },
+    
+
+    getOrganizerEvents: async (_, __, context) => {
+      const user = await getAuthenticatedUser(context);
+    
+      // Only allow organizers to fetch their own events
+      if (user.role !== 'CommunityOrganizer') {
+        throw new ForbiddenError('Only organizers can view their events.');
+      }
+    
+      try {
+        const events = await Event.find({ createdBy: user._id }).sort({ createdAt: -1 });
+        return events.map(event => ({
+          id: event._id,
+          ...event._doc,
+          createdAt: event.createdAt.toISOString(),
+        }));
+      } catch (err) {
+        throw new Error('Error fetching organizer events');
+      }
+    },
+
+    // Fetch a single event by ID
+    getEvent: async (_, { id }) => {
+      try {
+        const event = await Event.findById(id);
+        if (!event) {
+          throw new Error('Event not found');
+        }
+        return {
+          id: event._id,
+          ...event._doc,
+          createdAt: event.createdAt.toISOString()
+        };
+      } catch (err) {
+        throw new Error('Error fetching event');
       }
     }
   },
@@ -186,9 +285,14 @@ const resolvers = {
     createPost: async (_, { input }, context) => {
       try {
         const user = await getAuthenticatedUser(context);
-        checkIsResident(user);
+        const { title, content, category, severity, businessName, businessDescription, businessDeals, businessImage } = input;
         
-        const { title, content, category, severity } = input;
+        // Check if the user role is appropriate for the post type
+        if (category === 'Business' && user.role !== 'BusinessOwner') {
+          throw new ForbiddenError('Only business owners can create business posts');
+        } else if (category !== 'Business' && user.role === 'BusinessOwner') {
+          throw new ForbiddenError('Business owners can only create business posts');
+        }
         
         const post = new Post({
           title,
@@ -204,6 +308,16 @@ const resolvers = {
         
         if (category === 'Help Request') {
           post.helpRequest = { status: 'Open', volunteers: [] };
+        }
+        
+        if (category === 'Business' && user.role === 'BusinessOwner') {
+          post.businessInfo = { 
+            name: businessName || title, 
+            description: businessDescription || content,
+            deals: businessDeals || [],
+            image: businessImage || null,
+            reviews: []
+          };
         }
         
         await post.save();
@@ -298,45 +412,195 @@ const resolvers = {
       }
     },
     
-    // Volunteer for a help request
+    // Volunteer for a help request    
     volunteerForHelpRequest: async (_, { postId }, context) => {
+      const user = await getAuthenticatedUser(context);
+      const post = await Post.findById(postId);
+    
+      if (!post) throw new Error('Post not found');
+      if (post.category !== 'Help Request') {
+        throw new UserInputError('Can only volunteer for Help Request posts');
+      }
+    
+      if (!post.helpRequest) {
+        post.helpRequest = { status: 'Open', volunteers: [] };
+      }
+    
+      const userIdStr = user._id.toString();
+      if (post.helpRequest.volunteers.includes(userIdStr)) {
+        throw new UserInputError('You have already volunteered');
+      }
+    
+      post.helpRequest.volunteers.push(userIdStr);
+      await post.save();
+    
+      return {
+        id: post._id,
+        ...post._doc
+      };
+    },
+
+    //Create an event
+    createEvent: async (_, { input }, context) => {
+      try {
+        const user = await getAuthenticatedUser(context);
+        const { title, description, location, date } = input;
+  
+        const newEvent = new Event({
+          title,
+          description,
+          location,
+          date,
+          createdBy: user._id,
+          createdByName: `${user.firstName} ${user.lastName}`,
+        });
+  
+        await newEvent.save();
+  
+        return {
+          id: newEvent._id,
+          title: newEvent.title,
+          description: newEvent.description,
+          location: newEvent.location,
+          date: newEvent.date.toISOString(),
+          createdBy: newEvent.createdBy,
+          createdByName: newEvent.createdByName,
+          createdAt: newEvent.createdAt.toISOString(),
+        };
+      } catch (err) {
+        throw new Error('Error creating event');
+      }
+    },
+
+    // Update an existing event
+    updateEvent: async (_, { id, input }, context) => {
       try {
         const user = await getAuthenticatedUser(context);
         
+        const event = await Event.findById(id);
+        if (!event) {
+          throw new Error('Event not found');
+        }
+
+        if (event.createdBy.toString() !== user._id.toString()) {
+          throw new ForbiddenError('Not authorized to update this event');
+        }
+
+        if (input.title) event.title = input.title;
+        if (input.description) event.description = input.description;
+        if (input.location) event.location = input.location;
+        if (input.date) event.date = new Date(input.date);
+
+        await event.save();
+
+        return {
+          id: event._id,
+          ...event._doc,
+          createdAt: event.createdAt.toISOString()
+        };
+      } catch (err) {
+        throw new Error('Error updating event');
+      }
+    },
+
+    // Delete an event
+    deleteEvent: async (_, { id }, context) => {
+      try {
+        const user = await getAuthenticatedUser(context);
+
+        const event = await Event.findById(id);
+        if (!event) {
+          throw new Error('Event not found');
+        }
+
+        if (event.createdBy.toString() !== user._id.toString()) {
+          throw new ForbiddenError('Not authorized to delete this event');
+        }
+
+        await Event.findByIdAndDelete(id);
+        return true;
+      } catch (err) {
+        throw new Error('Error deleting event');
+      }
+    },
+    
+    // Add sentiment analysis resolver
+    analyzeSentiment: async (_, { text }) => {
+      try {
+        // This is a mock implementation - in a real app, you'd use a sentiment analysis API or library
+        const words = text.toLowerCase().split(/\s+/);
+        const positiveWords = ['good', 'great', 'excellent', 'amazing', 'love', 'best', 'wonderful', 'fantastic'];
+        const negativeWords = ['bad', 'poor', 'terrible', 'awful', 'hate', 'worst', 'horrible', 'disappointing'];
+        
+        let positiveCount = 0;
+        let negativeCount = 0;
+        
+        words.forEach(word => {
+          if (positiveWords.includes(word)) positiveCount++;
+          if (negativeWords.includes(word)) negativeCount++;
+        });
+        
+        if (positiveCount > negativeCount) return 'Positive';
+        if (negativeCount > positiveCount) return 'Negative';
+        return 'Neutral';
+      } catch (err) {
+        throw new Error('Error analyzing sentiment');
+      }
+    },
+    
+    // Add a review to a business post
+    addReview: async (_, { input }, context) => {
+      try {
+        const user = await getAuthenticatedUser(context);
+        const { postId, text, rating } = input;
+        
+        // Find the post
         const post = await Post.findById(postId);
         if (!post) {
           throw new Error('Post not found');
         }
         
-        if (post.category !== 'Help Request') {
-          throw new UserInputError('Can only volunteer for Help Request posts');
+        // Check if it's a business post
+        if (post.category !== 'Business') {
+          throw new UserInputError('Can only review business posts');
         }
         
-        if (post.helpRequest.volunteers.includes(user._id)) {
-          throw new UserInputError('You have already volunteered for this request');
+        // Create a random review ID (without using mongoose.Types.ObjectId)
+        const reviewId = Math.random().toString(36).substring(2, 15) + 
+                        Math.random().toString(36).substring(2, 15);
+        
+        // Create the review
+        // Format date for consistency
+        const now = new Date();
+        const formattedDate = now.toISOString();
+        
+        // Create the review with a properly formatted date string
+        const review = {
+          reviewId,
+          text,
+          rating,
+          authorId: user._id,
+          authorName: `${user.firstName} ${user.lastName}`,
+          createdAt: formattedDate
+        };
+        
+        // Initialize reviews array if it doesn't exist
+        if (!post.businessInfo.reviews) {
+          post.businessInfo.reviews = [];
         }
         
-        post.helpRequest.volunteers.push(user._id);
-        
-        if (post.helpRequest.status === 'Open') {
-          post.helpRequest.status = 'In Progress';
-        }
-        
+        // Add the review to the post
+        post.businessInfo.reviews.push(review);
         await post.save();
         
         return {
           id: post._id,
           ...post._doc,
-          author: {
-            id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            role: user.role
-          }
+          createdAt: post.createdAt.toISOString(),
+          updatedAt: post.updatedAt.toISOString()
         };
       } catch (err) {
-        throw new Error('Error volunteering for help request: ' + err.message);
+        throw new Error('Error adding review: ' + err.message);
       }
     }
   },
@@ -369,6 +633,29 @@ const resolvers = {
         throw new Error('Error fetching author data');
       }
     }
+  },
+  
+  Event: {
+    // Resolve createdBy field to fetch the full User data
+    createdBy: async (parent) => {
+      try {
+        const user = await User.findById(parent.createdBy);
+        if (!user) {
+          throw new Error('User not found');
+        }
+        return {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          createdAt: user.createdAt.toISOString()
+        };
+      } catch (err) {
+        throw new Error('Error fetching user for event');
+      }
+    },
+    
   }
 };
 
