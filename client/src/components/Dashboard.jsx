@@ -76,20 +76,48 @@ function Dashboard() {
             <h3>Business Owner Dashboard</h3>
           </div>
           <div className="card-body">
-            <p>This is the Business Owner-specific dashboard area.</p>
-            {/* Add business owner-specific features here */}
+            <p>Manage your business posts and promotions.</p>
+            <div className="mt-3">
+              <button 
+                className="btn btn-primary me-2"
+                onClick={() => navigate('/posts')}
+              >
+                View All Community Posts
+              </button>
+              <button 
+                className="btn btn-success"
+                onClick={() => navigate('/create-post')}
+              >
+                Create Business Post
+              </button>
+            </div>
           </div>
         </div>
       )}
-      
+
       {user.role === 'CommunityOrganizer' && (
         <div className="card mt-4">
           <div className="card-header">
             <h3>Community Organizer Dashboard</h3>
           </div>
           <div className="card-body">
-            <p>This is the Community Organizer-specific dashboard area.</p>
-            {/* Add community organizer-specific features here */}
+            <p>Manage your community activities effectively.</p>
+
+            <div className="mt-3">
+              <h5>Event Management</h5>
+              <button
+                className="btn btn-primary me-2"
+                onClick={() => navigate("/create-event")}
+              >
+                Create Event
+              </button>
+              <button
+                className="btn btn-primary me-2"
+                onClick={() => navigate("/events")}
+              >
+                View Community Events
+              </button>
+            </div>
           </div>
         </div>
       )}
