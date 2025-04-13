@@ -7,7 +7,7 @@ pool:
 stages:
 - stage: Build
   jobs:
-  - job: BuildClient
+  - job: BuildApp
     steps:
     - task: NodeTool@0
       inputs:
@@ -25,13 +25,6 @@ stages:
       inputs:
         pathtoPublish: 'client/dist'
         artifactName: 'client-build'
-  
-  - job: BuildServer
-    steps:
-    - task: NodeTool@0
-      inputs:
-        versionSpec: '18.x'
-      displayName: 'Install Node.js'
     
     - script: |
         cd server
