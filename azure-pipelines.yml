@@ -15,16 +15,24 @@ stages:
         versionSpec: '18.x'
       displayName: 'Install Node.js'
     
-    # SonarCloud analysis
+    # Create SonarCloud project properties
+    - script: |
+        echo Creating sonar-project.properties
+        echo sonar.projectKey=Community-web-app > sonar-project.properties
+        echo sonar.organization=rang1 >> sonar-project.properties
+        echo sonar.host.url=https://sonarcloud.io >> sonar-project.properties
+        echo sonar.sources=client/src,server >> sonar-project.properties
+        echo sonar.sourceEncoding=UTF-8 >> sonar-project.properties
+      displayName: 'Create SonarCloud Properties'
+
+    # SonarCloud analysis with auto-provisioning
     - task: SonarCloudPrepare@1
       inputs:
         SonarCloud: 'SonarQube'
         organization: 'rang1' 
         scannerMode: 'CLI'
-        configMode: 'manual'
-        cliProjectKey: 'Community-Web-App'
-        cliProjectName: 'Community Web App'
-        cliSources: '.'
+        configMode: 'file'
+        configFile: 'sonar-project.properties'
       displayName: 'Prepare SonarCloud Analysis'
     
     # Client build with tests and coverage
