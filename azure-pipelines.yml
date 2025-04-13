@@ -19,7 +19,7 @@ stages:
     - task: SonarCloudPrepare@1
       inputs:
         SonarCloud: 'SonarQube'
-        organization: 'rang1' 
+        organization: 'shidcentennial' 
         scannerMode: 'CLI'
         configMode: 'manual'
         cliProjectKey: 'ShidCentennial_Community-Web-App'
