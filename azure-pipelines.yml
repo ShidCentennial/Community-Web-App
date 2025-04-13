@@ -22,7 +22,7 @@ stages:
         organization: 'rang1' 
         scannerMode: 'CLI'
         configMode: 'manual'
-        cliProjectKey: 'CommunityWebApp'
+        cliProjectKey: 'Community-Web-App'
         cliProjectName: 'Community Web App'
         cliSources: '.'
       displayName: 'Prepare SonarCloud Analysis'
