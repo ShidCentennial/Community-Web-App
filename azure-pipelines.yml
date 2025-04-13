@@ -6,6 +6,7 @@ pool:
 
 stages:
 - stage: Build
+  displayName: 'Build Stage'
   jobs:
   - job: BuildApp
     steps:
@@ -14,13 +15,45 @@ stages:
         versionSpec: '18.x'
       displayName: 'Install Node.js'
     
+    # SonarCloud analysis
+    - task: SonarCloudPrepare@1
+      inputs:
+        SonarCloud: 'SonarQube'
+        organization: 'rang1' 
+        scannerMode: 'CLI'
+        configMode: 'manual'
+        cliProjectKey: 'CommunityWebApp'
+        cliProjectName: 'Community Web App'
+        cliSources: '.'
+      displayName: 'Prepare SonarCloud Analysis'
+    
+    # Client build with tests and coverage
     - script: |
         cd client
         npm ci
         npm run lint
+        npm test -- --coverage
         npm run build
-      displayName: 'Build Client App'
+      displayName: 'Build Client with Tests'
     
+    # Server build and tests
+    - script: |
+        cd server
+        npm ci
+        npm test -- --coverage
+      displayName: 'Build Server with Tests'
+      continueOnError: true  # Since test script is not implemented yet
+    
+    # Run SonarCloud analysis
+    - task: SonarCloudAnalyze@1
+      displayName: 'Run SonarCloud Analysis'
+    
+    - task: SonarCloudPublish@1
+      inputs:
+        pollingTimeoutSec: '300'
+      displayName: 'Publish SonarCloud Results'
+    
+    # Package artifacts
     - script: |
         IF NOT EXIST "$(Build.ArtifactStagingDirectory)\client" mkdir "$(Build.ArtifactStagingDirectory)\client"
         IF EXIST "client\dist" (
@@ -28,24 +61,131 @@ stages:
         ) ELSE (
           echo "Warning: dist directory does not exist"
         )
-      displayName: 'Copy client build artifacts'
-      
-    - task: PublishBuildArtifacts@1
-      inputs:
-        pathtoPublish: '$(Build.ArtifactStagingDirectory)/client'
-        artifactName: 'client-build'
-    
-    - script: |
-        cd server
-        npm ci
-      displayName: 'Install Server Dependencies'
+      displayName: 'Package Client Artifacts'
     
     - script: |
         IF NOT EXIST "$(Build.ArtifactStagingDirectory)\server" mkdir "$(Build.ArtifactStagingDirectory)\server"
         xcopy /Y /I /E "server\*" "$(Build.ArtifactStagingDirectory)\server\"
-      displayName: 'Copy server files'
-      
+        echo "PORT=3000" > "$(Build.ArtifactStagingDirectory)\server\.env"
+      displayName: 'Package Server Artifacts'
+    
+    # Publish artifacts
     - task: PublishBuildArtifacts@1
       inputs:
-        pathtoPublish: '$(Build.ArtifactStagingDirectory)/server'
-        artifactName: 'server'
+        pathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'community-web-app'
+      displayName: 'Publish Build Artifacts'
+
+- stage: Deliver
+  displayName: 'Delivery Stage'
+  dependsOn: Build
+  jobs:
+  - job: PrepareRelease
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'community-web-app'
+        downloadPath: '$(System.ArtifactsDirectory)'
+      displayName: 'Download Artifacts'
+    
+    - script: |
+        cd "$(System.ArtifactsDirectory)/community-web-app"
+        echo "Version: $(Build.BuildNumber)" > release-info.txt
+        echo "Release Date: $(Get.Date)" >> release-info.txt
+      displayName: 'Prepare Release Package'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: '$(System.ArtifactsDirectory)/community-web-app'
+        artifactName: 'release-package'
+      displayName: 'Publish Release Package'
+
+- stage: DeployToDev
+  displayName: 'Deploy to Dev'
+  dependsOn: Deliver
+  jobs:
+  - deployment: DeployToDev
+    environment: 'development'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "Deploying to DEV environment"
+              IF NOT EXIST "$(Pipeline.Workspace)\deploy\dev" mkdir "$(Pipeline.Workspace)\deploy\dev"
+              xcopy /Y /I /E "$(Pipeline.Workspace)\release-package\*" "$(Pipeline.Workspace)\deploy\dev\"
+              
+              cd "$(Pipeline.Workspace)\deploy\dev\server"
+              echo "PORT=3001" > .env
+              npm install pm2 -g
+              pm2 stop community-web-app-dev || echo "App not running"
+              pm2 start server.js --name community-web-app-dev
+            displayName: 'Deploy to DEV Environment (Port 3001)'
+
+- stage: DeployToQAT
+  displayName: 'Deploy to QAT'
+  dependsOn: DeployToDev
+  jobs:
+  - deployment: DeployToQAT
+    environment: 'qat'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "Deploying to QAT environment"
+              IF NOT EXIST "$(Pipeline.Workspace)\deploy\qat" mkdir "$(Pipeline.Workspace)\deploy\qat"
+              xcopy /Y /I /E "$(Pipeline.Workspace)\release-package\*" "$(Pipeline.Workspace)\deploy\qat\"
+              
+              cd "$(Pipeline.Workspace)\deploy\qat\server"
+              echo "PORT=3002" > .env
+              npm install pm2 -g
+              pm2 stop community-web-app-qat || echo "App not running"
+              pm2 start server.js --name community-web-app-qat
+            displayName: 'Deploy to QAT Environment (Port 3002)'
+
+- stage: DeployToStaging
+  displayName: 'Deploy to Staging'
+  dependsOn: DeployToQAT
+  jobs:
+  - deployment: DeployToStaging
+    environment: 'staging'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "Deploying to Staging environment"
+              IF NOT EXIST "$(Pipeline.Workspace)\deploy\staging" mkdir "$(Pipeline.Workspace)\deploy\staging"
+              xcopy /Y /I /E "$(Pipeline.Workspace)\release-package\*" "$(Pipeline.Workspace)\deploy\staging\"
+              
+              cd "$(Pipeline.Workspace)\deploy\staging\server"
+              echo "PORT=3003" > .env
+              npm install pm2 -g
+              pm2 stop community-web-app-staging || echo "App not running"
+              pm2 start server.js --name community-web-app-staging
+            displayName: 'Deploy to Staging Environment (Port 3003)'
+
+- stage: DeployToProduction
+  displayName: 'Deploy to Production'
+  dependsOn: DeployToStaging
+  jobs:
+  - deployment: DeployToProduction
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "Deploying to Production environment"
+              IF NOT EXIST "$(Pipeline.Workspace)\deploy\production" mkdir "$(Pipeline.Workspace)\deploy\production"
+              xcopy /Y /I /E "$(Pipeline.Workspace)\release-package\*" "$(Pipeline.Workspace)\deploy\production\"
+              
+              cd "$(Pipeline.Workspace)\deploy\production\server"
+              echo "PORT=3000" > .env
+              npm install pm2 -g
+              pm2 stop community-web-app-production || echo "App not running"
+              pm2 start server.js --name community-web-app-production
+            displayName: 'Deploy to Production Environment (Port 3000)'
